@@ -1,7 +1,8 @@
 # BooleanPestModel
 Colin Tosh's Boolean Regulatory Network Pest Model
 
-See Biotic stress and yield stability in English organic silvoarable
+
+Biotic stress and yield stability in English organic silvoarable
 
 Dr Colin Tosh 1, Dr Tom Staton2, Dr Ambrogio Ambrogio Costanzo3 , Dr Will Simonson1
 1 Organic Research Centre, Cirencester, United Kingdom
