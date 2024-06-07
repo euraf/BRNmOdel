@@ -32,7 +32,9 @@ run1step<-function(state, transitions){
   for (ele in names(transitions)){
     transitionarray<-transitions[[ele]]
     contextnodes<-strsplit(names(dimnames(transitionarray))[1], split="_")[[1]]
-    proba<-transitionarray[paste(state[contextnodes], collapse = ""),as.character(state[ele])]
+    codecontext<-paste(state[contextnodes], collapse = "")
+    if(! codecontext %in% rownames(transitionarray)) stop(paste("Apparently the transition for", ele, "in state", state[ele], "in context", codecontext, "is not among the provided transition probabilities"))
+    proba<-transitionarray[codecontext,as.character(state[ele])]
     #todo: instead of paste/strsplit, use multidimensional arrays, probably more efficient... need to format the truth tables as n-dimensional
     #proba<-transitionarray[matrix(as.character(state[contextnodes]), nrow=1),as.character(state[ele])]
     future[ele]<-rbinom(n=1, size=1, prob=proba)
@@ -93,10 +95,10 @@ runexpe<-function(initstate, transitions, timesteps=52, nbreps=10, perturbation=
   allsims<-array(0, dim=c(timesteps, length(initstate), nbreps), dimnames=list(time=NULL,nodes=names(initstate), reps=NULL))
   for(r in 1:nbreps) allsims[1,,r]<-initstate #initialise
   starttime<-2 #initialise start time
-  if(!is.null(perturbation)) {
+  if(!is.null(perturbation)) if(nrow(perturbation)>0) {
     times<-perturbation$when #we extract the perturbation times and order them
     times<-unique(times[order(times)])
-    times<-times[times<timesteps] #keep only those within the simulations
+    times<-times[times>1 & times<timesteps] #keep only those within the simulations
     for (t in times){ #for each end of interval,
       for(i in starttime:t) { #run until then
         for(r in 1:nbreps) allsims[i,,r]<-run1step(state=allsims[i-1,,r], transitions=transitions) #run  all reps for 1 step
@@ -149,8 +151,6 @@ plotmeans<-function(allsims,...){
 #                  perturbation=data.frame(when=c(20, 35), what=c("N1", "N2"), value=c(1, 0)))
 #
 # plotmeans(allsims, main="pesticide and perturbation")
-
-
 
 #read the default values from excel
 #setwd("~/a_ABSys/DIGITAF/WP2farmers/task2.2_treecropperformance/ColinsPestModel/BooleanPestModel")
@@ -232,6 +232,11 @@ ui <- fluidPage(
         uiOutput(outputId="boxinitialisation"),
         numericInput(inputId="nbreps", label="# repetitions", value=100),
         numericInput(inputId="timesteps", label="# time steps", value=52),
+        bsCollapsePanel(
+          "Outbreaks",
+          uiOutput(outputId="boxoutbreaks"),
+          style = "success"
+        ),
         style = "success"
       ),
       bsCollapsePanel(
@@ -261,6 +266,17 @@ server <- function(input, output, session) {
                          choices = rv$nodes,
                          selected=initat1),
     )
+  })
+  
+  output$boxoutbreaks<-renderUI({
+    lapply(rv$nodes, function(i) {
+      return(sliderInput(inputId=paste("outbreakrange", i, sep="_"),
+                        label=i,
+                        min=-1,
+                        max=input$timesteps,
+                        step=1,
+                        value=c(-1,-1)))
+    })
   })
 
   output$modeldefinition<-renderUI({
@@ -311,14 +327,36 @@ server <- function(input, output, session) {
      actionButton(inputId="updatemodel", label="Update model (not yet coded)")
    )
  })
-
+  
+ perturbationData<-reactive({
+   perturbation<-data.frame()
+   controls <- reactiveValuesToList(input)
+   controls<-controls[grepl(x=names(controls), pattern="outbreakrange_", fixed=TRUE)]
+  if(length(controls)>0){
+    hasbeenset<-sapply(controls, function (x) return(!identical(as.numeric(x), c(-1,-1))))
+    controls<-controls[hasbeenset]#we remove those that were not modified
+    if(length(controls)>0) for(i in 1:length(controls)){
+      what<-gsub(pattern="outbreakrange_", replacement="", names(controls)[i])
+      rangetimes<-controls[[i]]
+      newperturb<-data.frame(when=max(rangetimes[1],1):max(rangetimes[2],1), what=what, value=1)
+      perturbation<-rbind(perturbation, newperturb)
+    }
+  }
+   
+   return(perturbation)
+ })#perturbationData() is a data.frame of the perturbations (one line per time-node, with columns when what value)
 
   output$plot1 <- renderPlot({
     initstate<-logical(length(rv$nodes)); names(initstate)<-rv$nodes
     initstate[names(initstate) %in% input$initialisation]<-1
     nbreps<-input$nbreps
     timesteps<-input$timesteps
-    allsims<-runexpe(initstate=initstate, transitions=rv$transitions, timesteps=timesteps, nbreps=nbreps)
+    perturbation<-perturbationData()
+    allsims<-runexpe(initstate=initstate, 
+                     transitions=rv$transitions, 
+                     timesteps=timesteps, 
+                     nbreps=nbreps,
+                     perturbation=perturbation)
     plotmeans(allsims)
 
   })
