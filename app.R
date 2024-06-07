@@ -3,15 +3,8 @@ set.seed(1978)
 
 
 
-## Global
+#### Global ####
 
-generate01title<-function(factornames){
-  dimname<-paste(factornames, collapse="_")
-  names(factornames)<-factornames
-  possibilities<-list(as.character(apply(expand.grid(lapply(as.list(factornames), function(x) return(c(0,1)))),1, paste, collapse="")))
-  names(possibilities)<-dimname
-  return(possibilities)
-}
 
 #' Function to run 1 time step of probabilistic transitions
 #'
@@ -22,8 +15,8 @@ generate01title<-function(factornames){
 #' @export
 #'
 #' @examples {transitions<-list(N1=array(c(0.2, 0.4, 0.8, 0.1), dim=c(2,2), dimnames=list(N2=c(0,1),N1=c(0,1))),
-#' N2=array(runif(8), dim=c(4,2), dimnames=c(generate01title(c("N2", "N3")), list(N2=c(0,1)))),
-#' N3=array(runif(8), dim=c(4,2), dimnames=c(generate01title(c("N1", "N2")), list(N3=c(0,1))))
+#' N2=array(array(c(0.2, 0.4, 0.8, 0.1), dim=c(2,2), dimnames=list(N2=c(0,1),N2=c(0,1)))),
+#' N3=array(array(c(0.2, 0.4, 0.8, 0.1), dim=c(2,2), dimnames=list(N2=c(0,1),N3=c(0,1))))
 #' )
 #' run1step(state=c(0,1,1), transitions=transitions)
 #' }
@@ -42,39 +35,7 @@ run1step<-function(state, transitions){
   return(future)
 }
 
-# #example use
-# transitions<-list(N1=array(c(0.2, 0.4, 0.8, 0.1), dim=c(2,2), dimnames=list(N2=c(0,1),N1=c(0,1))),
-#                   N2=array(runif(8), dim=c(4,2), dimnames=c(generate01title(c("N2", "N3")), list(N2=c(0,1)))),
-#                   N3=array(runif(8), dim=c(4,2), dimnames=c(generate01title(c("N1", "N2")), list(N3=c(0,1))))
-#                   )
-# run1step(state=c(N1=0,N2=1,N3=1), transitions=transitions)
-# toto<-run1step(state=c(N1=0,N2=1,N3=1), transitions=transitions)
-# toto<-run1step(state=toto, transitions=transitions); toto
 
-#' Function to run simple model without perturbation nor pesticides
-#'
-#' @param initstate logical vector (named with node names) of initial states
-#' @param transitions list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified, d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
-#' @param timesteps number of timesteps to run
-#' @param nbreps number of repetitions to run
-#'
-#' @return an array with dimensions time, nodes, reps
-#' @export
-#'
-#' @examples {transitions<-list(N1=array(c(0.2, 0.4, 0.8, 0.1), dim=c(2,2), dimnames=list(N2=c(0,1),N1=c(0,1))),
-#' N2=array(runif(8), dim=c(4,2), dimnames=c(generate01title(c("N2", "N3")), list(N2=c(0,1)))),
-#' N3=array(runif(8), dim=c(4,2), dimnames=c(generate01title(c("N1", "N2")), list(N3=c(0,1))))
-#' )
-#' initstate<-c(N1=0,N2=1,N3=1)
-#' nbreps<-1000
-#allsims<-runexpe(initstate=initstate, transitions=transitions, timesteps=52, nbreps=100)
-#' }
-# runexpesimple<-function(initstate, transitions, timesteps=52, nbreps=10){
-#   #allsims<-matrix(0, nrow=52, ncol=length(state), dimnames=list(NULL,names(initstate)))
-#   allsims<-array(0, dim=c(timesteps, length(initstate), nbreps), dimnames=list(time=NULL,nodes=names(initstate), reps=NULL))
-#   allsims[1,,r]<-initstate
-#   return(allsims)
-# }
 
 #' run simulation with possibility of pesticides (=> the loops are switched between time and reps to all computing mean values to decide pesticied use) and perturbation
 #'
@@ -125,8 +86,8 @@ runexpe<-function(initstate, transitions, timesteps=52, nbreps=10, perturbation=
 }
 #example use
 # transitions<-list(N1=array(c(0.2, 0.4, 0.8, 0.1), dim=c(2,2), dimnames=list(N2=c(0,1),N1=c(0,1))),
-#                   N2=array(runif(8), dim=c(4,2), dimnames=c(generate01title(c("N2", "N3")), list(N2=c(0,1)))),
-#                   N3=array(runif(8), dim=c(4,2), dimnames=c(generate01title(c("N1", "N2")), list(N3=c(0,1))))
+#                   N2=array(c(0.2, 0.4, 0.8, 0.1), dim=c(2,2), dimnames=list(N2=c(0,1),list(N2=c(0,1)))),
+#                   N3=array(c(0.2, 0.4, 0.8, 0.1), dim=c(2,2), dimnames=list(N2=c(0,1),list(N3=c(0,1))))
 # )
 #initstate<-c(N1=0,N2=1,N3=1)
 #nbreps<-1000
@@ -155,42 +116,10 @@ plotmeans<-function(allsims,...){
 #read the default values from excel
 #setwd("~/a_ABSys/DIGITAF/WP2farmers/task2.2_treecropperformance/ColinsPestModel/BooleanPestModel")
 library(openxlsx)
-nodes<-read.xlsx("DefaultValues.xlsx", sheet = "Nodes", colNames =FALSE)[,1]
+nodes<-read.xlsx("DefaultValues.xlsx", sheet = "Nodes", colNames =FALSE)[,1] #character vector of node names
 names(nodes)<-nodes
-edges<-read.xlsx("DefaultValues.xlsx", sheet = "Effects")
-## to do: add possibility of pollinated crop => possibility to add pollinators
-#the first time, creation of dummy transition (random generated)
-# transitionsDummy<-lapply(nodes, function(x){
-#   effectsof<-edges[edges$EffectOn==x,"EffectOf"]
-#   if(length(effectsof)>0){
-#     namesrows<-generate01title(effectsof)
-#     namescols<-list(as.character(c(0, 1)))
-#     names(namescols)<-x
-#     content<-array(runif(length(namesrows[[1]])*length(namescols[[1]])),
-#                    dim=c(length(namesrows[[1]]), length(namescols[[1]])),
-#                    dimnames=c(namesrows, namescols))
-#     return(content)
-#   }
-#   return(NULL)
-# })
-#
-# export<-data.frame()
-# for(i in 1:length(transitionsDummy)){
-#   toto<-transitionsDummy[[i]]
-#   if(!is.null(toto)){
-#     effectsof<-names(dimnames(toto))[1]
-#     effectson<-names(dimnames(toto))[2]
-#     toto<-as.data.frame(toto)
-#     toto$EffectOf<-effectsof
-#     toto$EffectOn<-effectson
-#     toto$context<-rownames(toto)
-#     export<-rbind(export, toto[,c("EffectOn", "EffectOf", "context", "0", "1")])
-#   }
-# }
-# write.xlsx(export, "exportxls.xlsx")
-
-#once the probabilities have been updated, read them in, and format to the transitions format
-import<-read.xlsx("DefaultValues.xlsx", sheet = "Transitions")
+edges<-read.xlsx("DefaultValues.xlsx", sheet = "Effects") #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+import<-read.xlsx("DefaultValues.xlsx", sheet = "Transitions") #data.frame with columns EffectOn	EffectOf	context	low2high	high2low (context is a character value of 010011 codes of context states)
 transitions<-lapply(nodes, function(x){
   toto<-import[import$EffectOn==x,]
   if(nrow(toto)>0){
@@ -200,6 +129,8 @@ transitions<-lapply(nodes, function(x){
     names(dim2)<-x
     toto<-as.array(as.matrix(toto[,c("low2high", "high2low")]))
     dimnames(toto)<-c(dim1, dim2)
+    #order by context in order to find more quickly the values
+    toto[order(dim1[[1]], decreasing=FALSE),]
     return(toto)
   } else {
     toto<-array(0, dim=c(0,2))
@@ -207,13 +138,14 @@ transitions<-lapply(nodes, function(x){
     names(dim2)<-x
     dimnames(toto)<-c(list(NULL), dim2)
     return(toto)
-    }
-})
-initvalues<-rep(FALSE, length(nodes)) ; names(initvalues)<-nodes
-initat1<-read.xlsx("DefaultValues.xlsx", sheet = "initialisation")[,1]
-initvalues[initat1]<-1
+  }
+}) #Transitions is formatted according to the (not very smart) format chosen initially: list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+initvalues<-rep(FALSE, length(nodes)) ; names(initvalues)<-nodes #named logical vector
+initat1<-read.xlsx("DefaultValues.xlsx", sheet = "initialisation")[,1] #vector names of nodes initialised at 1
+initvalues[initat1]<-TRUE
 
 
+#### UI ####
 
 library(shinythemes)
 library(shinyBS)
@@ -222,7 +154,7 @@ ui <- fluidPage(
   theme = shinytheme("cosmo"),
   tags$style('#sidebar {border: none; background-color: transparent; padding: 0;}'),
   titlePanel(# app title/description
-    "Boolean Regulatory Network Pest Model"),
+    "Boolean Regulatory Network mOdel (BRNmOdel)"),
   sidebarLayout(
     sidebarPanel(
       id = "sidebar",
@@ -248,17 +180,22 @@ ui <- fluidPage(
         "Parameterisation",
         uiOutput(outputId="boxParameterisation"),
         style = "danger"
-      )
+      ),
+      width = 4
     ),
     mainPanel(plotOutput("plot1"))
-
+    
   )
 )
+
+#### Server ####
+
 server <- function(input, output, session) {
   rv <- reactiveValues(nodes=nodes,
                        edges=edges,
                        transitions=transitions) #the updating of the reactiveValues hasn't been coded yet
-
+  
+####   boxinitialisation ####
   output$boxinitialisation<-renderUI({ #we put it in server side because eventually it is dynamic according to model specification by user
     tagList(
       checkboxGroupInput(inputId="initialisation",
@@ -268,18 +205,21 @@ server <- function(input, output, session) {
     )
   })
   
+  ####   boxoutbreaks ####
   output$boxoutbreaks<-renderUI({
     lapply(rv$nodes, function(i) {
       return(sliderInput(inputId=paste("outbreakrange", i, sep="_"),
-                        label=i,
-                        min=-1,
-                        max=input$timesteps,
-                        step=1,
-                        value=c(-1,-1)))
+                         label=i,
+                         min=-1,
+                         max=input$timesteps,
+                         step=1,
+                         value=c(-1,-1)))
     })
   })
-
+  
+  ####   box modeldefinition ####
   output$modeldefinition<-renderUI({
+    ####   boxes effects on ####
     controls_list <- lapply(rv$transitions, function(i) {
       control_type <- "checkboxGroupInput"
       focalnode<-names(dimnames(i))[2]
@@ -296,56 +236,63 @@ server <- function(input, output, session) {
       actionButton(inputId="updatemodel", label="Update model (not yet coded)")
     )
   })
- output$boxParameterisation<-renderUI({
-   controls_list <- lapply(rv$transitions, function(i) {
-     focalnode<-names(dimnames(i))[2]
-     effectsof<-names(dimnames(i))[1]
-     if(effectsof!=""){
-       topinfo<-list(p(strong(paste(focalnode, "depends on", effectsof))))
-       controls1node<-list()
-       for(context in dimnames(i)[[1]]) {
-         input_id1 <- paste("probal2h", focalnode, context, sep="_")
-         input_id2 <- paste("probah2l", focalnode, context, sep="_")
-         controls1node<-c(controls1node,
-                          tagList(fluidRow(column(width=6, sliderInput(input_id1, label = paste(context, "low to high"),
-                                                                       min=0, max=1, value=i[context,"0"])),
-                                           column(width=6, sliderInput(input_id2, label = paste(context, "high to low"),
-                                                                       min=0, max=1, value=i[context,"1"]))))
-
-                          )
-       }
-
-       return(bsCollapsePanel(title=focalnode,topinfo, controls1node))
-     } else {
-       topinfo<-list(p(strong(paste(focalnode, "is fixed"))))
-       return(bsCollapsePanel(title=focalnode,topinfo))
-     }
-
-     })
-   tagList(
-     tagList(controls_list),
-     actionButton(inputId="updatemodel", label="Update model (not yet coded)")
-   )
- })
+  ####   boxParameterisation  ####
+  output$boxParameterisation<-renderUI({
+    controls_list <- lapply(rv$transitions, function(i) {
+      focalnode<-names(dimnames(i))[2]
+      effectsof<-names(dimnames(i))[1]
+      if(effectsof!=""){
+        topinfo<-list(p(strong(paste(focalnode, "depends on", effectsof))))
+        controls1node<-list()
+        for(context in dimnames(i)[[1]]) {
+          input_id1 <- paste("probal2h", focalnode, context, sep="_")
+          input_id2 <- paste("probah2l", focalnode, context, sep="_")
+          controls1node<-c(controls1node,
+                           tagList(fluidRow(column(width=6, #sliderInput(input_id1, label = paste(context, "low to high"),
+                                                   #            min=0, max=1, value=i[context,"0"])),
+                                                   numericInput(input_id1, label = paste(context, "low to high"),
+                                                                value=i[context,"0"])),
+                                            column(width=6, #sliderInput(input_id2, label = paste(context, "high to low"),
+                                                   #            min=0, max=1, value=i[context,"1"]))))
+                                                   numericInput(input_id1, label = paste(context, "high to low"),
+                                                                value=i[context,"1"]))))
+                           
+          )
+        }
+        
+        return(bsCollapsePanel(title=focalnode,topinfo, controls1node))
+      } else {
+        topinfo<-list(p(strong(paste(focalnode, "is fixed"))))
+        return(bsCollapsePanel(title=focalnode,topinfo))
+      }
+      
+    })
+    tagList(
+      tagList(controls_list),
+      actionButton(inputId="updatemodel", label="Update model (not yet coded)")
+    )
+  })
   
- perturbationData<-reactive({
-   perturbation<-data.frame()
-   controls <- reactiveValuesToList(input)
-   controls<-controls[grepl(x=names(controls), pattern="outbreakrange_", fixed=TRUE)]
-  if(length(controls)>0){
-    hasbeenset<-sapply(controls, function (x) return(!identical(as.numeric(x), c(-1,-1))))
-    controls<-controls[hasbeenset]#we remove those that were not modified
-    if(length(controls)>0) for(i in 1:length(controls)){
-      what<-gsub(pattern="outbreakrange_", replacement="", names(controls)[i])
-      rangetimes<-controls[[i]]
-      newperturb<-data.frame(when=max(rangetimes[1],1):max(rangetimes[2],1), what=what, value=1)
-      perturbation<-rbind(perturbation, newperturb)
+  #### Perturbations ####
+  perturbationData<-reactive({
+    perturbation<-data.frame()
+    controls <- reactiveValuesToList(input)
+    controls<-controls[grepl(x=names(controls), pattern="outbreakrange_", fixed=TRUE)]
+    if(length(controls)>0){
+      hasbeenset<-sapply(controls, function (x) return(!identical(as.numeric(x), c(-1,-1))))
+      controls<-controls[hasbeenset]#we remove those that were not modified
+      if(length(controls)>0) for(i in 1:length(controls)){
+        what<-gsub(pattern="outbreakrange_", replacement="", names(controls)[i])
+        rangetimes<-controls[[i]]
+        newperturb<-data.frame(when=max(rangetimes[1],1):max(rangetimes[2],1), what=what, value=1)
+        perturbation<-rbind(perturbation, newperturb)
+      }
     }
-  }
-   
-   return(perturbation)
- })#perturbationData() is a data.frame of the perturbations (one line per time-node, with columns when what value)
-
+    return(perturbation)
+  })#perturbationData() is a data.frame of the perturbations (one line per time-node, with columns when what value)
+  
+  
+  #### Main plot (and running of model) ####
   output$plot1 <- renderPlot({
     initstate<-logical(length(rv$nodes)); names(initstate)<-rv$nodes
     initstate[names(initstate) %in% input$initialisation]<-1
@@ -358,7 +305,7 @@ server <- function(input, output, session) {
                      nbreps=nbreps,
                      perturbation=perturbation)
     plotmeans(allsims)
-
+    
   })
 }
 
