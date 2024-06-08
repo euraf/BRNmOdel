@@ -165,7 +165,7 @@ ui <- fluidPage(
   theme = shinytheme("cosmo"),
   tags$style('#sidebar {border: none; background-color: transparent; padding: 0;}'),
   titlePanel(# app title/description
-    "Boolean Regulatory Network mOdel (BRNmOdel)"),
+    "Boolean Regulatory Network mOdel (BRNmOdel) - click on the boxes to expand/collapse them (red boxes are not working properly yet...)"),
   sidebarLayout(
     sidebarPanel(
       id = "sidebar",
@@ -194,13 +194,19 @@ ui <- fluidPage(
       ),
       width = 4
     ),
-    mainPanel(plotOutput("plot1"),
-              bsCollapsePanel(
-                "Model analysis",
-                plotOutput("plotGraph"),
-                plotOutput("plotSEM"),
-                style = "danger"
-              ))
+    mainPanel(fluidPage(fluidRow(
+      
+      plotOutput("plot1"),
+      bsCollapsePanel(
+        "Model analysis",
+      plotOutput("plotGraph"),
+      p("SEM analysis (only significant effects are included, top row are the values at the previous timestep)"),
+      p("To do check the analysis because results are not the same as when I ran the analysis separately (it had a negative effect of diseases_previous on yield)"),
+      plotOutput("plotSEM"),
+         style = "danger"
+      )
+    ))
+    )
     
   )
 )
@@ -393,74 +399,83 @@ server <- function(input, output, session) {
   
   )
   #### graphs model analysis ####
-  plotGraph<-renderPlot({
+  output$plotGraph<-renderPlot({
     #### plot graph of relationships ####
-
-    g <- graph_from_data_frame(rvstructure$edges[,c("EffectOf", "EffectOn")], directed=TRUE)
-    plot(g, layout=layout.circle, main="Declared effects")
+    if(TRUE) {
+      g <- graph_from_data_frame(rvstructure$edges[,c("EffectOf", "EffectOn")], directed=TRUE)
+      plot(g, layout=layout.circle, main="Declared effects")
+    } else plot(0,0, type="n", bty="n", xlab="just to test plots in collapsible box", ylab="", xaxt="n", yaxt="n")
+    
   })
   
-  plotSEM<-renderPlot({
-    #### run model with trees and without trees (to do: make this generic to run all combinations of fixed nodes states) ####
-    initvalues<-logical(length(rvstructure$nodes)) ; names(initvalues)<-rvstructure$nodes
-    allsims<-runexpe(initstate=initvalues, transitions=rvparam$transitions, timesteps=input$timestep, nbreps=input$nbreps#,
-                     #                  pesticides = c(N1=0.3),
-                     #                  perturbation=data.frame(when=c(20, 35), what=c("N1", "N2"), value=c(1, 0))
-    )
-    notrees<-initvalues
-    notrees["Trees"]<-0
-    allsims2<-runexpe(initstate=notrees, transitions=transitions, timesteps=52, nbreps=100#,
-                      #                  pesticides = c(N1=0.3),
-                      #                  perturbation=data.frame(when=c(20, 35), what=c("N1", "N2"), value=c(1, 0))
-    )
-
-    #### format simulaed data ####
-    #allsimstreenotree<-abind::abind(allsims, allsims2)
-    addprevioustimestep<-function(allsims){
-      moyennestrees<-as.data.frame(apply(allsims,c(1,2), mean))
-      toto<-names(moyennestrees); names(toto)<-toto
-      decal<-as.data.frame(lapply(toto, function(x) numeric(nrow(moyennestrees))))
-      decal[,toto]<-lapply(moyennestrees[,toto], function(x) {titi<-x ; titi[2:length(x)]<-x[1:(length(x)-1)]; return(titi)})
-      names(decal)<-paste(toto,"previous", sep="_")
-      moyennestrees$time<-1:nrow(moyennestrees)
-      moyennestrees<-cbind(moyennestrees, decal)
-      return(moyennestrees)
+  output$plotSEM<-renderPlot({
+    if("Trees" %in% rvstructure$nodes){
+      #### run model with trees and without trees (to do: make this generic to run all combinations of fixed nodes states) ####
+      initstate<-logical(length(rvstructure$nodes)) ; names(initstate)<-rvstructure$nodes
+      initstate["Trees"]<-1
+      allsims<-runexpe(initstate=initstate, 
+                       transitions=rvparam$transitions, 
+                       timesteps=input$timesteps, 
+                       nbreps=input$nbreps,
+                       perturbation=NULL)
+      notrees<-initstate
+      notrees["Trees"]<-0
+      allsims2<-runexpe(initstate=notrees, transitions=transitions, timesteps=52, nbreps=100#,
+                        #                  pesticides = c(N1=0.3),
+                        #                  perturbation=data.frame(when=c(20, 35), what=c("N1", "N2"), value=c(1, 0))
+      )
+      
+      #### format simulaed data ####
+      #allsimstreenotree<-abind::abind(allsims, allsims2)
+      addprevioustimestep<-function(allsims){
+        moyennestrees<-as.data.frame(apply(allsims,c(1,2), mean))
+        toto<-names(moyennestrees); names(toto)<-toto
+        decal<-as.data.frame(lapply(toto, function(x) numeric(nrow(moyennestrees))))
+        decal[,toto]<-lapply(moyennestrees[,toto], function(x) {titi<-x ; titi[2:length(x)]<-x[1:(length(x)-1)]; return(titi)})
+        names(decal)<-paste(toto,"previous", sep="_")
+        moyennestrees$time<-1:nrow(moyennestrees)
+        moyennestrees<-cbind(moyennestrees, decal)
+        return(moyennestrees)
+      }
+      
+      dataforSEM<-rbind(addprevioustimestep(allsims), addprevioustimestep(allsims2))
+      
+      #### run the SEM analysis ####
+      #install.packages("lavaan", dependencies=T)
+      #install.packages("semPlot", dependencies=T)
+      
+      
+      
+      model<-paste(sapply(unique(rvstructure$edges$EffectOn), function(x) {paste(x, paste(c(paste(x, "previous", sep="_"), paste(edges[edges$EffectOn==x, "EffectOf"], "previous", sep="_")),collapse="+"),sep="~")}), collapse ="\n")
+      # model<- '
+      # NaturalEnemies~NaturalEnemies_previous+Trees_previous+Weeds_previous+Diseases_previous+Pests_previous
+      # Pests~Pests_previous+Trees_previous+NaturalEnemies_previous+Weeds_previous+Diseases_previous
+      # Yield~+Yield_previous+Weeds_previous+Diseases_previous+Pests_previous
+      # Diseases~Diseases_previous+Pests_previous+Trees_previous+Weeds_previous
+      # Weeds~Weeds_previous+Trees_previous+Pests_previous+Yield_previous+Diseases_previous
+      # '
+      
+      fit <- sem(model, data=dataforSEM, estimator = "ML")
+      resume<-summary(fit)
+      #print(resume)
+      # rerun without unsignificant efffects
+      testeffets<-resume$pe
+      effectstokeep<-testeffets[!is.na(testeffets$pvalue) & testeffets$pvalue<0.05 &testeffets$op=="~",]
+      model2<- paste(paste(effectstokeep$lhs, effectstokeep$op, effectstokeep$rhs, sep=""), collapse="\n")
+      fit2 <- sem(model2, data=dataforSEM, estimator = "ML")
+      resume2<-summary(fit2)
+      #print(resume2)
+      # same but not taking into account autocorrelation
+      #effectstokeepnoauto<-testeffets[!is.na(testeffets$pvalue) & testeffets$pvalue<0.05 &testeffets$op=="~" & paste(testeffets$lhs, "previous", sep="_")!=testeffets$rhs,]
+      #model3<- paste(paste(effectstokeepnoauto$lhs, effectstokeepnoauto$op, effectstokeepnoauto$rhs, sep=""), collapse="\n")
+      #fit3 <- sem(model3, data=dataforSEM, estimator = "ML")
+      #resume<-summary(fit3)
+      #plot the significant relationships
+      semPaths(fit2, "std", fade = F, layout = "tree", intercepts = F, residuals  = F)
+    } else { #Trees in not in the model
+      plot(0,0, type="n", bty="n", xlab="This code currently only works if there is a fixed node named Trees", ylab="", xaxt="n", yaxt="n")
+      
     }
-
-    dataforSEM<-rbind(addprevioustimestep(allsims), addprevioustimestep(allsims2))
-
-    #### run the SEM analysis ####
-    #install.packages("lavaan", dependencies=T)
-    #install.packages("semPlot", dependencies=T)
-
-
-
-    model<-paste(sapply(unique(rvstructure$edges$EffectOn), function(x) {paste(x, paste(c(paste(x, "previous", sep="_"), paste(edges[edges$EffectOn==x, "EffectOf"], "previous", sep="_")),collapse="+"),sep="~")}), collapse ="\n")
-    # model<- '
-    # NaturalEnemies~NaturalEnemies_previous+Trees_previous+Weeds_previous+Diseases_previous+Pests_previous
-    # Pests~Pests_previous+Trees_previous+NaturalEnemies_previous+Weeds_previous+Diseases_previous
-    # Yield~+Yield_previous+Weeds_previous+Diseases_previous+Pests_previous
-    # Diseases~Diseases_previous+Pests_previous+Trees_previous+Weeds_previous
-    # Weeds~Weeds_previous+Trees_previous+Pests_previous+Yield_previous+Diseases_previous
-    # '
-
-    fit <- sem(model, data=dataforSEM, estimator = "ML")
-    resume<-summary(fit)
-    print(resume)
-    # rerun without unsignificant efffects
-    testeffets<-resume$pe
-    effectstokeep<-testeffets[!is.na(testeffets$pvalue) & testeffets$pvalue<0.05 &testeffets$op=="~",]
-    model2<- paste(paste(effectstokeep$lhs, effectstokeep$op, effectstokeep$rhs, sep=""), collapse="\n")
-    fit2 <- sem(model2, data=dataforSEM, estimator = "ML")
-    resume2<-summary(fit2)
-    print(resume2)
-    # same but not taking into account autocorrelation
-    #effectstokeepnoauto<-testeffets[!is.na(testeffets$pvalue) & testeffets$pvalue<0.05 &testeffets$op=="~" & paste(testeffets$lhs, "previous", sep="_")!=testeffets$rhs,]
-    #model3<- paste(paste(effectstokeepnoauto$lhs, effectstokeepnoauto$op, effectstokeepnoauto$rhs, sep=""), collapse="\n")
-    #fit3 <- sem(model3, data=dataforSEM, estimator = "ML")
-    #resume<-summary(fit3)
-    #plot the significant relationships
-    semPaths(fit2, "std", fade = F, layout = "tree", intercepts = F, residuals  = F, main="Significant relationships")
   })
 }
 
