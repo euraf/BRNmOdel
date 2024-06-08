@@ -65,9 +65,9 @@ runexpe<-function(initstate, transitions, timesteps=52, nbreps=10, perturbation=
     times<-times[times>1 & times<timesteps] #keep only those within the simulations
     for (t in times){ #for each end of interval,
       for(i in starttime:t) { #run until then
-        #for(r in 1:nbreps) allsims[i,,r]<-run1step(state=allsims[i-1,,r], transitions=transitions) #run  all reps for 1 step
+        for(r in 1:nbreps) allsims[i,,r]<-run1step(state=allsims[i-1,,r], transitions=transitions) #run  all reps for 1 step
         #now that run1step accepts arrays, do all reps at the same time
-        allsims[i,,]<-run1step(state=allsims[i-1,,], transitions=transitions) #run  all reps for 1 step
+        #allsims[i,,]<-run1step(state=allsims[i-1,,], transitions=transitions) #run  all reps for 1 step
         for (p in names(pesticides))  { #apply pesticides
           meanvalue<-mean(allsims[i,p,])
           if(meanvalue>=pesticides[p]) allsims[i,p,]<-0
@@ -82,6 +82,8 @@ runexpe<-function(initstate, transitions, timesteps=52, nbreps=10, perturbation=
   #run the rest
   for(i in starttime:timesteps) {
     for(r in 1:nbreps) allsims[i,,r]<-run1step(state=allsims[i-1,,r], transitions=transitions) #run all reps for 1 step
+    #now that run1step accepts arrays, do all reps at the same time
+    #allsims[i,,]<-run1step(state=allsims[i-1,,], transitions=transitions) #run  all reps for 1 step
     for (p in names(pesticides))  { #apply pesticides
       meanvalue<-mean(allsims[i,p,])
       if(meanvalue>=pesticides[p]) allsims[i,p,]<-0
@@ -163,7 +165,7 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       id = "sidebar",
-
+      
       bsCollapsePanel(
         "Model settings",
         uiOutput(outputId="boxinitialisation"),
@@ -198,9 +200,10 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   rv <- reactiveValues(nodes=nodes,
                        edges=edges,
-                       transitions=transitions) #the updating of the reactiveValues hasn't been coded yet
+                       transitions=transitions) #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
   
-####   boxinitialisation ####
+  #### dynamic UI ####
+  ####   boxinitialisation ####
   output$boxinitialisation<-renderUI({ #we put it in server side because eventually it is dynamic according to model specification by user
     tagList(
       checkboxGroupInput(inputId="initialisation",
@@ -259,7 +262,7 @@ server <- function(input, output, session) {
                                                                 value=i[context,"0"], step = 0.005)),
                                             column(width=6, #sliderInput(input_id2, label = paste(context, "high to low"),
                                                    #            min=0, max=1, value=i[context,"1"]))))
-                                                   numericInput(input_id1, label = paste(context, "high to low"),
+                                                   numericInput(input_id2, label = paste(context, "high to low"),
                                                                 value=i[context,"1"], step = 0.005))))
                            
           )
@@ -273,10 +276,13 @@ server <- function(input, output, session) {
       
     })
     tagList(
-      tagList(controls_list),
-      actionButton(inputId="updatemodel", label="Update model (not yet coded)")
+      actionButton(inputId="updateTransitions", label="Update model (not yet coded)"),
+      tagList(controls_list)
+      #put back the button here after debugging
     )
   })
+  
+  #### server logic ####
   
   #### Perturbations ####
   perturbationData<-reactive({
@@ -296,6 +302,29 @@ server <- function(input, output, session) {
     return(perturbation)
   })#perturbationData() is a data.frame of the perturbations (one line per time-node, with columns when what value)
   
+  
+  #### modification of transitions ####
+  observeEvent(eventExpr=input$updateTransitions,
+               handlerExpr={
+                 controls <- reactiveValuesToList(input)
+                 controls<-c(controls[grepl(x=names(controls), pattern="^probal2h")],
+                             controls[grepl(x=names(controls), pattern="^probah2l")])
+                 toto<-strsplit(names(controls), split="_")
+                 probatypes<-sapply(toto,"[[", 1)
+                 focalnodes<-sapply(toto,"[[", 2)
+                 context<-sapply(toto,"[[", 3)
+                 #transitions=list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+                 for(n in names(rv$Transitions)){
+                   subcontext<-context[focalnodes==n]
+                   subprobatypes<-context[focalnodes==n]
+                   newvalues<-controls[focalnodes==n]
+                   rv$Transitions[[n]][subcontext, as.character(subprobatypes=="probah2l")]<<-newvalues
+                 }
+                 #NB once transitions have been changed to 3dimensionnal arrays, something like this will be easier
+                 #rv$Transitions[focalnodes, context, as.character(probatypes=="probah2l")]<<-controls
+               },
+               ignoreInit = TRUE
+  )
   
   #### Main plot (and running of model) ####
   output$plot1 <- renderPlot({
