@@ -32,7 +32,7 @@ run1step<-function(state, transitions){
     #proba<-transitionarray[matrix(as.character(state[contextnodes]), nrow=1),as.character(state[ele])]
     changes<-rbinom(n=1, size=1, prob=proba)
     if(length(dim(state)>1)){
-      future[ele,changes]<- !future[ele,changes]
+      future[ele,changes]<- !future[ele,changes] #to do: fix this, it does not work (creates NA)
     } else future[ele][changes]<- !future[ele][changes]
   }
   return(future)
@@ -125,7 +125,7 @@ plotmeans<-function(allsims,...){
 library(openxlsx)
 nodes<-read.xlsx("DefaultValues.xlsx", sheet = "Nodes", colNames =FALSE)[,1] #character vector of node names
 names(nodes)<-nodes
-edges<-read.xlsx("DefaultValues.xlsx", sheet = "Effects") #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+edges<-read.xlsx("DefaultValues.xlsx", sheet = "Effects") #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is name of the node having an effect on it, (i.e. causing the context of the focal node)
 import<-read.xlsx("DefaultValues.xlsx", sheet = "Transitions") #data.frame with columns EffectOn	EffectOf	context	low2high	high2low (context is a character value of 010011 codes of context states)
 transitions<-lapply(nodes, function(x){
   toto<-import[import$EffectOn==x,]
@@ -198,9 +198,10 @@ ui <- fluidPage(
 #### Server ####
 
 server <- function(input, output, session) {
-  rv <- reactiveValues(nodes=nodes,
-                       edges=edges,
-                       transitions=transitions) #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+  rvstructure <- reactiveValues(nodes=nodes, #vector of node names
+                                edges=edges) #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+  rvparam<-reactiveValues(transitions=transitions) #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+  # to do: currently, interacting with any control causes the model to re-run, which is annoying because it's time consuming. immediate effect should happen only in the "model settings box. actions on the model definition and parameterization boxes should do nothing until the "update model" buttons are clicked.
   
   #### dynamic UI ####
   ####   boxinitialisation ####
@@ -208,14 +209,14 @@ server <- function(input, output, session) {
     tagList(
       checkboxGroupInput(inputId="initialisation",
                          label="Initialisation",
-                         choices = rv$nodes,
+                         choices = rvstructure$nodes,
                          selected=initat1),
     )
   })
   
   ####   boxoutbreaks ####
   output$boxoutbreaks<-renderUI({
-    lapply(rv$nodes, function(i) {
+    lapply(rvstructure$nodes, function(i) {
       return(sliderInput(inputId=paste("outbreakrange", i, sep="_"),
                          label=i,
                          min=-1,
@@ -228,25 +229,37 @@ server <- function(input, output, session) {
   ####   box modeldefinition ####
   output$modeldefinition<-renderUI({
     ####   boxes effects on ####
-    controls_list <- lapply(rv$transitions, function(i) {
+    # controls_list <- lapply(rv$transitions, function(i) {
+    #   control_type <- "checkboxGroupInput"
+    #   focalnode<-names(dimnames(i))[2]
+    #   input_id <- paste("effectson", focalnode, sep="_")
+    #   #message(paste("creation", input_id))
+    #   choices <- names(rv$transitions)
+    #   selected<-unlist(strsplit( names(dimnames(i))[1], "_"))
+    #   labelinput<-paste("Select the nodes having an effect on", focalnode)
+    #   return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
+    # })
+    checkboxeseffectof <- lapply(rvstructure$nodes, function(i) {
       control_type <- "checkboxGroupInput"
-      focalnode<-names(dimnames(i))[2]
-      input_id <- paste("effectson", focalnode, sep="_")
+      edges<-rvstructure$edges
+      effectsof<-edges[edges$EffectOn==i, "EffectOf"] #effectsof is a vector of context nodes
+      input_id <- paste("effectson", i, sep="_")
       #message(paste("creation", input_id))
-      choices <- names(rv$transitions)
-      selected<-unlist(strsplit( names(dimnames(i))[1], "_"))
-      labelinput<-paste("Select the nodes having an effect on", focalnode)
+      choices <- rvstructure$nodes
+      selected<-effectsof
+      labelinput<-paste("Select the nodes having an effect on", i)
       return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
     })
     tagList(
-      textInput(inputId = "nodes", label="Node names", value=paste(names(rv$transitions), collapse=",")),
-      tagList(controls_list),
-      actionButton(inputId="updatemodel", label="Update model (not yet coded)")
+      textInput(inputId = "nodes", label="Node names", value=paste(rvstructure$nodes, collapse=",")),
+      tagList(checkboxeseffectof),
+      actionButton(inputId="updateedges", label="Update model (not yet coded)")
     )
   })
+  
   ####   boxParameterisation  ####
   output$boxParameterisation<-renderUI({
-    controls_list <- lapply(rv$transitions, function(i) {
+    controls_list <- lapply(rvparam$transitions, function(i) {
       focalnode<-names(dimnames(i))[2]
       effectsof<-names(dimnames(i))[1]
       if(effectsof!=""){
@@ -282,6 +295,7 @@ server <- function(input, output, session) {
     )
   })
   
+  
   #### server logic ####
   
   #### Perturbations ####
@@ -303,6 +317,7 @@ server <- function(input, output, session) {
   })#perturbationData() is a data.frame of the perturbations (one line per time-node, with columns when what value)
   
   
+  
   #### modification of transitions ####
   observeEvent(eventExpr=input$updateTransitions,
                handlerExpr={
@@ -314,11 +329,11 @@ server <- function(input, output, session) {
                  focalnodes<-sapply(toto,"[[", 2)
                  context<-sapply(toto,"[[", 3)
                  #transitions=list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
-                 for(n in names(rv$Transitions)){
+                 for(n in names(rvparam$Transitions)){
                    subcontext<-context[focalnodes==n]
                    subprobatypes<-context[focalnodes==n]
                    newvalues<-controls[focalnodes==n]
-                   rv$Transitions[[n]][subcontext, as.character(subprobatypes=="probah2l")]<<-newvalues
+                   rvparam$Transitions[[n]][subcontext, as.character(subprobatypes=="probah2l")]<<-newvalues
                  }
                  #NB once transitions have been changed to 3dimensionnal arrays, something like this will be easier
                  #rv$Transitions[focalnodes, context, as.character(probatypes=="probah2l")]<<-controls
@@ -326,21 +341,47 @@ server <- function(input, output, session) {
                ignoreInit = TRUE
   )
   
+  
+  
   #### Main plot (and running of model) ####
-  output$plot1 <- renderPlot({
-    initstate<-logical(length(rv$nodes)); names(initstate)<-rv$nodes
-    initstate[names(initstate) %in% input$initialisation]<-1
+  # output$plot1 <- renderPlot({
+  #   initstate<-logical(length(rvstructure$nodes)); names(initstate)<-rvstructure$nodes
+  #   initstate[names(initstate) %in% input$initialisation]<-1 #to do: correct (minor) bug that prevents default init states to be taken account before the user open the model settings box (because then the input$initialisation control does not exist yet)
+  #   nbreps<-input$nbreps
+  #   timesteps<-input$timesteps
+  #   perturbation<-perturbationData()
+  #   allsims<-runexpe(initstate=initstate, 
+  #                    transitions=rvparam$transitions, 
+  #                    timesteps=timesteps, 
+  #                    nbreps=nbreps,
+  #                    perturbation=perturbation)
+  #   plotmeans(allsims)
+  #   
+  # })
+  #do it in an observeEvent so that it is rendered only if inputs from the model settings box are changed, or if the update buttons from the other boxes are clicked
+  #to do: fix this, it does not work: it continues redrawing the raph every time anything is changed, but it doesn t take into account the changed probabilities
+  observeEvent(handlerExpr=isolate(output$plot1 <- renderPlot({
+    initstate<-logical(length(rvstructure$nodes)); names(initstate)<-rvstructure$nodes
+    initstate[names(initstate) %in% input$initialisation]<-1 #to do: correct (minor) bug that prevents default init states to be taken account before the user open the model settings box (because then the input$initialisation control does not exist yet)
     nbreps<-input$nbreps
     timesteps<-input$timesteps
     perturbation<-perturbationData()
     allsims<-runexpe(initstate=initstate, 
-                     transitions=rv$transitions, 
+                     transitions=rvparam$transitions, 
                      timesteps=timesteps, 
                      nbreps=nbreps,
                      perturbation=perturbation)
     plotmeans(allsims)
-    
-  })
+  })),
+  eventExpr={input$nbreps
+    input$timesteps
+    perturbationData()
+    input$updateTransitions
+    input$updateedges
+  },
+  ignoreNULL =FALSE
+  
+  )
 }
 
 shinyApp(ui = ui, server = server)
