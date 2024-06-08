@@ -8,7 +8,7 @@ set.seed(1978)
 
 #' Function to run 1 time step of probabilistic transitions
 #'
-#' @param state logical vector of current state (size = n, number of nodes in the model)
+#' @param state logical vector of current state (size = n, number of nodes in the model) OR 2 dimensional array with nodes in rows and repetitions in columns
 #' @param transitions list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified, d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
 #'
 #' @return logical vector of t+1 state (size = number of nodes in the model)
@@ -30,7 +30,10 @@ run1step<-function(state, transitions){
     proba<-transitionarray[codecontext,as.character(state[ele])]
     #todo: instead of paste/strsplit, use multidimensional arrays, probably more efficient... need to format the truth tables as n-dimensional
     #proba<-transitionarray[matrix(as.character(state[contextnodes]), nrow=1),as.character(state[ele])]
-    future[ele]<-rbinom(n=1, size=1, prob=proba)
+    changes<-rbinom(n=1, size=1, prob=proba)
+    if(length(dim(state)>1)){
+      future[ele,changes]<- !future[ele,changes]
+    } else future[ele][changes]<- !future[ele][changes]
   }
   return(future)
 }
@@ -62,7 +65,9 @@ runexpe<-function(initstate, transitions, timesteps=52, nbreps=10, perturbation=
     times<-times[times>1 & times<timesteps] #keep only those within the simulations
     for (t in times){ #for each end of interval,
       for(i in starttime:t) { #run until then
-        for(r in 1:nbreps) allsims[i,,r]<-run1step(state=allsims[i-1,,r], transitions=transitions) #run  all reps for 1 step
+        #for(r in 1:nbreps) allsims[i,,r]<-run1step(state=allsims[i-1,,r], transitions=transitions) #run  all reps for 1 step
+        #now that run1step accepts arrays, do all reps at the same time
+        allsims[i,,]<-run1step(state=allsims[i-1,,], transitions=transitions) #run  all reps for 1 step
         for (p in names(pesticides))  { #apply pesticides
           meanvalue<-mean(allsims[i,p,])
           if(meanvalue>=pesticides[p]) allsims[i,p,]<-0
@@ -251,11 +256,11 @@ server <- function(input, output, session) {
                            tagList(fluidRow(column(width=6, #sliderInput(input_id1, label = paste(context, "low to high"),
                                                    #            min=0, max=1, value=i[context,"0"])),
                                                    numericInput(input_id1, label = paste(context, "low to high"),
-                                                                value=i[context,"0"])),
+                                                                value=i[context,"0"], step = 0.005)),
                                             column(width=6, #sliderInput(input_id2, label = paste(context, "high to low"),
                                                    #            min=0, max=1, value=i[context,"1"]))))
                                                    numericInput(input_id1, label = paste(context, "high to low"),
-                                                                value=i[context,"1"]))))
+                                                                value=i[context,"1"], step = 0.005))))
                            
           )
         }
