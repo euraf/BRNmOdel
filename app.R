@@ -171,7 +171,7 @@ ui <- fluidPage(
       id = "sidebar",
       
       bsCollapsePanel(
-        "Model settings",
+        "Play with the model",
         uiOutput(outputId="boxinitialisation"),
         numericInput(inputId="nbreps", label="# repetitions", value=100),
         numericInput(inputId="timesteps", label="# time steps", value=52),
@@ -181,17 +181,27 @@ ui <- fluidPage(
           style = "success"
         ),
         style = "success"
-      ),
+      ), #end play
       bsCollapsePanel(
-        "Model definition",
-        uiOutput(outputId="modeldefinition"),
+        "Define your own model",
+        fluidRow(
+          actionButton("uploadcompletefromscratch", "Upload a complete model definition file"),
+          actionButton("resetdefault", "Reset default values")
+          ),
+        h2("... OR ..."),
+        p("use this interface for step by step model definition:"),
+        bsCollapsePanel(
+          "Model structure",
+          uiOutput(outputId="modeldefinition"),
+          style = "danger"
+        ),
+        bsCollapsePanel(
+          "Model parameterization",
+          uiOutput(outputId="boxParameterisation"),
+          style = "danger"
+        ),
         style = "danger"
-      ),
-      bsCollapsePanel(
-        "Model parameterisation",
-        uiOutput(outputId="boxParameterisation"),
-        style = "danger"
-      ),
+      ), #end define
       width = 4
     ),
     mainPanel(fluidPage(fluidRow(
@@ -199,11 +209,11 @@ ui <- fluidPage(
       plotOutput("plot1"),
       bsCollapsePanel(
         "Model analysis",
-      plotOutput("plotGraph"),
-      p("SEM analysis (only significant effects are included, top row are the values at the previous timestep)"),
-      p("To do check the analysis because results are not the same as when I ran the analysis separately (it had a negative effect of diseases_previous on yield)"),
-      plotOutput("plotSEM"),
-         style = "danger"
+        plotOutput("plotGraph"),
+        p("SEM analysis (only significant effects are included, top row are the values at the previous timestep)"),
+        p("To do check the analysis because results are not the same as when I ran the analysis separately (it had a negative effect of diseases_previous on yield)"),
+        plotOutput("plotSEM"),
+        style = "danger"
       )
     ))
     )
@@ -223,6 +233,7 @@ server <- function(input, output, session) {
   ####   boxinitialisation ####
   output$boxinitialisation<-renderUI({ #we put it in server side because eventually it is dynamic according to model specification by user
     tagList(
+      p("click on the nodes that start at 'high level'"),
       checkboxGroupInput(inputId="initialisation",
                          label="Initialisation",
                          choices = rvstructure$nodes,
@@ -232,6 +243,7 @@ server <- function(input, output, session) {
   
   ####   boxoutbreaks ####
   output$boxoutbreaks<-renderUI({
+    p("Move the slider to create outbreaks (periods of forced hich value for  given node)")
     lapply(rvstructure$nodes, function(i) {
       return(sliderInput(inputId=paste("outbreakrange", i, sep="_"),
                          label=i,
@@ -269,7 +281,7 @@ server <- function(input, output, session) {
     tagList(
       textInput(inputId = "nodes", label="Node names", value=paste(rvstructure$nodes, collapse=",")),
       tagList(checkboxeseffectof),
-      actionButton(inputId="updateedges", label="Update model (not yet coded)")
+      downloadButton(outputId="downloadtemplate", label="Download the excel template (not yet coded)")
     )
   })
   
@@ -305,9 +317,10 @@ server <- function(input, output, session) {
       
     })
     tagList(
-      actionButton(inputId="updateTransitions", label="Update model (not yet coded)"),
+      fileInput("uploadexcel", "Upload the complete model definition file (not yet coded)"),
+      p("You can further finetune the parameters"),
       tagList(controls_list)
-      #put back the button here after debugging
+      #actionButton(inputId="updateTransitions", label="Update model (not yet coded)")
     )
   })
   
