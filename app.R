@@ -141,18 +141,16 @@ library(openxlsx)
 #' @export
 #'
 #' @examples
-createtemplate<-function(node, edges){
+createtemplate<-function(nodes, edges){
   #split the nodes
   Nodes<-nodes
   Effects<-edges
   Transitions<-data.frame()
-  for(i in names(listedges)){
-    if(length(listedges[[i]])>0){
-      EffectOn<-gsub(pattern="effectson_", replacement="", x=i)
-      effectnodes<-listedges[[i]]
-      #prepare Effects tab
-      toto<-data.frame(EffectOn=EffectOn, EffectOf=effectnodes)
-      Effects<-rbind(Effects, toto)
+  for(i in unique(edges$EffectOn)){
+    dat<-edges[edges$EffectOn==i,]
+    if(nrow(dat)>0){
+      EffectOn<-i
+      effectnodes<-dat$EffectOf
       #prepare Transitions tab
       EffectOf<-paste(effectnodes, collapse="_")
       context<-as.character(apply(expand.grid(lapply(as.list(effectnodes), function(x) return(c(0,1)))),1, paste, collapse=""))
@@ -319,8 +317,9 @@ server <- function(input, output, session) {
     #   return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
     # })
     tagList(
-      textInput(inputId = "nodes", label="Node names", value=paste(rvstructure$nodes, collapse=","))
-      )
+      textInput(inputId = "nodes", label="Node names", value=paste(rvstructure$nodes, collapse=",")),
+      actionButton(inputId="buttonvalidatenodes", label="Validate nodes")
+    )
   })
   output$modeldefinition2<-renderUI({ # warning this piece of code is duplicated (in observeEvent(eventExpr=input$nodes, )
     checkboxeseffectof <- lapply(rvstructure$nodes, function(i) {
@@ -434,29 +433,32 @@ server <- function(input, output, session) {
     ignoreInit =TRUE
   )
   
-  observeEvent(eventExpr=input$nodes,
-               handlerExpr={
-                 usernodes<-input$nodes
-                 usernodes<-gsub(pattern="; ", replacement=",", x=usernodes)
-                 if(!identical(unname(unlist(strsplit(usernodes, split=","))), unname(rvstructure$nodes))){
-                   output$modeldefinition2<<-renderUI({ # warning this piece of code is duplicated (in output$modeldefinition2<-renderUI({ )
-                     userstructure<-tempostructure()
-                     checkboxeseffectof <- lapply(userstructure$nodes, function(i) {
-                       control_type <- "checkboxGroupInput"
-                       edges<-userstructure$edges
-                       effectsof<-edges[edges$EffectOn==i, "EffectOf"] #effectsof is a vector of context nodes
-                       input_id <- paste("effectson", i, sep="_")
-                       #message(paste("creation", input_id))
-                       choices <- userstructure$nodes
-                       selected<-effectsof
-                       labelinput<-paste("Select the nodes having an effect on", i)
-                       return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
-                     })
-                     tagList(checkboxeseffectof)
-                   })
-                 }
-               },
-               ignoreInit = TRUE)
+  # #icicicicic bug: this creates an infinite loop
+  # observeEvent(eventExpr=input$buttonvalidatenodes,
+  #              handlerExpr={
+  #                usernodes<-input$nodes
+  #                usernodes<-gsub(pattern="; ", replacement=",", x=usernodes)
+  #                if(!identical(unname(unlist(strsplit(usernodes, split=","))), unname(rvstructure$nodes))){
+  #                  output$modeldefinition2<<-renderUI({ # warning this piece of code is duplicated (in output$modeldefinition2<-renderUI({ )
+  #                    userstructure<-tempostructure()
+  #                    checkboxeseffectof <- lapply(userstructure$nodes, function(i) {
+  #                      control_type <- "checkboxGroupInput"
+  #                      edges<-userstructure$edges
+  #                      effectsof<-edges[edges$EffectOn==i, "EffectOf"] #effectsof is a vector of context nodes
+  #                      input_id <- paste("effectson", i, sep="_")
+  #                      #message(paste("creation", input_id))
+  #                      choices <- userstructure$nodes
+  #                      selected<-effectsof
+  #                      labelinput<-paste("Select the nodes having an effect on", i)
+  #                      return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
+  #                    })
+  #                    tagList(checkboxeseffectof)
+  #                  })
+  #                }
+  #              },
+  #              ignoreInit = TRUE
+  # )
+  
   #### reactive to hold the temporary model structure
   tempostructure<-reactive({
     controls <- reactiveValuesToList(input)
@@ -545,13 +547,13 @@ server <- function(input, output, session) {
                      perturbation=perturbation)
     plotmeans(allsims)
   })),
-    eventExpr={input$nbreps
-      input$timesteps
-      perturbationData()
-      input$updateTransitions
-      input$updateedges
-    },
-    ignoreNULL =FALSE
+  eventExpr={input$nbreps
+    input$timesteps
+    perturbationData()
+    input$updateTransitions
+    input$updateedges
+  },
+  ignoreNULL =FALSE
   )
   
   #### small graph side menu in model definition box ####
