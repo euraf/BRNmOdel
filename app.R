@@ -5,7 +5,10 @@ library(lavaan)
 library(semPlot)
 #set.seed(1978)
 
-
+#warning: there is a mistake in the code making it difficult to maintain: 
+#edges is sometimes a named list (on element per node) of character vectors of causal node names (the names of the list are in the form paste("effectson", i, sep="_") with i the focal node name) this comes from the checkboxgroupinput
+# and sometimes a data.frame with 2 columns EffectOn and EffectOf
+#to do: call it listedges when it is a list
 
 #### Global ####
 
@@ -124,37 +127,83 @@ plotmeans<-function(allsims,...){
 #
 # plotmeans(allsims, main="pesticide and perturbation")
 
-#read the default values from excel
 #setwd("~/a_ABSys/DIGITAF/WP2farmers/task2.2_treecropperformance/ColinsPestModel/BooleanPestModel")
 library(openxlsx)
-nodes<-read.xlsx("DefaultValues.xlsx", sheet = "Nodes", colNames =FALSE)[,1] #character vector of node names
-names(nodes)<-nodes
-edges<-read.xlsx("DefaultValues.xlsx", sheet = "Effects") #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is name of the node having an effect on it, (i.e. causing the context of the focal node)
-import<-read.xlsx("DefaultValues.xlsx", sheet = "Transitions") #data.frame with columns EffectOn	EffectOf	context	low2high	high2low (context is a character value of 010011 codes of context states)
-transitions<-lapply(nodes, function(x){
-  toto<-import[import$EffectOn==x,]
-  if(nrow(toto)>0){
-    dim1<-list(toto$context)
-    names(dim1)<-unique(toto$EffectOf)
-    dim2<-list(c("0", "1"))
-    names(dim2)<-x
-    toto<-as.array(as.matrix(toto[,c("low2high", "high2low")]))
-    dimnames(toto)<-c(dim1, dim2)
-    #order by context in order to find more quickly the values
-    toto[order(dim1[[1]], decreasing=FALSE),]
-    return(toto)
-  } else {
-    toto<-array(0, dim=c(0,2))
-    dim2<-list(c("0", "1"))
-    names(dim2)<-x
-    dimnames(toto)<-c(list(NULL), dim2)
-    return(toto)
-  }
-}) #Transitions is formatted according to the (not very smart) format chosen initially: list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
-initvalues<-rep(FALSE, length(nodes)) ; names(initvalues)<-nodes #named logical vector
-initat1<-read.xlsx("DefaultValues.xlsx", sheet = "initialisation")[,1] #vector names of nodes initialised at 1
-initvalues[initat1]<-TRUE
 
+#### model definition file read, create template and write
+
+#' Create the dataframes necessary to write the template excel file based on the nodes and edges provided as inputs
+#'
+#' @param nodes character vector od nodes names was #1 element character vector of node names, separated by commas, semicolons or spaces this comes from the textinput
+#' @param listedges data?frame with 2 columns (EffectOn and EffectOf) # was named list (on element per node) of character vectors of causal node names (the names of the list are in the form paste("effectson", i, sep="_") with i the focal node name) this comes from the checkboxgroupinput
+#' 
+#' @return a list (elements named Nodes, Effects, Transitions, initialisation) of data.frames to be used to write the excel file to be downloaded to be used as template to fill in the transitions of a new model
+#' @export
+#'
+#' @examples
+createtemplate<-function(node, edges){
+  #split the nodes
+  Nodes<-nodes
+  Effects<-edges
+  Transitions<-data.frame()
+  for(i in names(listedges)){
+    if(length(listedges[[i]])>0){
+      EffectOn<-gsub(pattern="effectson_", replacement="", x=i)
+      effectnodes<-listedges[[i]]
+      #prepare Effects tab
+      toto<-data.frame(EffectOn=EffectOn, EffectOf=effectnodes)
+      Effects<-rbind(Effects, toto)
+      #prepare Transitions tab
+      EffectOf<-paste(effectnodes, collapse="_")
+      context<-as.character(apply(expand.grid(lapply(as.list(effectnodes), function(x) return(c(0,1)))),1, paste, collapse=""))
+      toto<-data.frame(EffectOn=EffectOn, EffectOf=EffectOf,context=context, low2high="", high2low="")
+      Transitions<-rbind(Transitions, toto)
+    }
+  }
+  initialisation<-data.frame(initAt1=character(0))
+  return(list(Nodes=Nodes, Effects=Effects,Transitions=Transitions,initialisation=initialisation))
+}
+
+#' Read model definition from excel
+#'
+#' @param filepath path of the excel file defining a new model
+#'
+#' @return a named list with elements nodes, edges, transitions and initvalues. nodes=vector of node names, edges = data.frame with 2 columns (EffectOf and EffectOn) with 1 row per edge, transitions=list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified, d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0). initvalues a named logical vector (names = nodes) 
+#' @export
+#'
+#' @examples
+readexcel<-function(filepath="DefaultValues.xlsx"){
+  nodes<-read.xlsx(filepath, sheet = "Nodes", colNames =FALSE)[,1] #character vector of node names
+  names(nodes)<-nodes
+  edges<-read.xlsx(filepath, sheet = "Effects") #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is name of the node having an effect on it, (i.e. causing the context of the focal node)
+  import<-read.xlsx(filepath, sheet = "Transitions") #data.frame with columns EffectOn	EffectOf	context	low2high	high2low (context is a character value of 010011 codes of context states)
+  transitions<-lapply(nodes, function(x){
+    toto<-import[import$EffectOn==x,]
+    if(nrow(toto)>0){
+      dim1<-list(toto$context)
+      names(dim1)<-unique(toto$EffectOf)
+      dim2<-list(c("0", "1"))
+      names(dim2)<-x
+      toto<-as.array(as.matrix(toto[,c("low2high", "high2low")]))
+      dimnames(toto)<-c(dim1, dim2)
+      #order by context in order to find more quickly the values
+      toto[order(dim1[[1]], decreasing=FALSE),]
+      return(toto)
+    } else {
+      toto<-array(0, dim=c(0,2))
+      dim2<-list(c("0", "1"))
+      names(dim2)<-x
+      dimnames(toto)<-c(list(NULL), dim2)
+      return(toto)
+    }
+  }) #Transitions is formatted according to the (not very smart) format chosen initially: list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+  initvalues<-rep(FALSE, length(nodes)) ; names(initvalues)<-nodes #named logical vector
+  initat1<-read.xlsx(filepath, sheet = "initialisation")[,1] #vector names of nodes initialised at 1
+  initvalues[initat1]<-TRUE
+  return(list(nodes=nodes, edges=edges, transitions=transitions, initvalues=initvalues))
+}
+# read in default model
+DEFAULTVALUES<-readexcel()
 
 #### UI ####
 
@@ -185,14 +234,16 @@ ui <- fluidPage(
       bsCollapsePanel(
         "Define your own model",
         fluidRow(
-          actionButton("uploadcompletefromscratch", "Upload a complete model definition file"),
+          fileInput("uploadexcel", "Upload a complete model definition file", accept="xlsx"),
           actionButton("resetdefault", "Reset default values")
-          ),
+        ),
         h2("... OR ..."),
         p("use this interface for step by step model definition:"),
         bsCollapsePanel(
           "Model structure",
-          uiOutput(outputId="modeldefinition"),
+          uiOutput(outputId="modeldefinition1"),
+          uiOutput(outputId="modeldefinition2"),
+          uiOutput(outputId="modeldefinition3"),
           style = "danger"
         ),
         bsCollapsePanel(
@@ -200,7 +251,7 @@ ui <- fluidPage(
           uiOutput(outputId="boxParameterisation"),
           style = "danger"
         ),
-        style = "danger"
+        style = "success"
       ), #end define
       width = 4
     ),
@@ -209,7 +260,7 @@ ui <- fluidPage(
       plotOutput("plot1"),
       bsCollapsePanel(
         "Model analysis",
-        plotOutput("plotGraph"),
+        plotOutput("plotGraphmainPanel"),
         p("SEM analysis (only significant effects are included, top row are the values at the previous timestep)"),
         p("To do check the analysis because results are not the same as when I ran the analysis separately (it had a negative effect of diseases_previous on yield)"),
         plotOutput("plotSEM"),
@@ -224,9 +275,9 @@ ui <- fluidPage(
 #### Server ####
 
 server <- function(input, output, session) {
-  rvstructure <- reactiveValues(nodes=nodes, #vector of node names
-                                edges=edges) #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
-  rvparam<-reactiveValues(transitions=transitions) #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+  rvstructure <- reactiveValues(nodes=DEFAULTVALUES$nodes, #vector of node names
+                                edges=DEFAULTVALUES$edges) #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+  rvparam<-reactiveValues(transitions=DEFAULTVALUES$transitions) #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
   # to do: currently, interacting with any control causes the model to re-run, which is annoying because it's time consuming. immediate effect should happen only in the "model settings box. actions on the model definition and parameterization boxes should do nothing until the "update model" buttons are clicked.
   
   #### dynamic UI ####
@@ -237,7 +288,7 @@ server <- function(input, output, session) {
       checkboxGroupInput(inputId="initialisation",
                          label="Initialisation",
                          choices = rvstructure$nodes,
-                         selected=initat1),
+                         selected=DEFAULTVALUES$initvalues),
     )
   })
   
@@ -255,7 +306,7 @@ server <- function(input, output, session) {
   })
   
   ####   box modeldefinition ####
-  output$modeldefinition<-renderUI({
+  output$modeldefinition1<-renderUI({
     ####   boxes effects on ####
     # controls_list <- lapply(rv$transitions, function(i) {
     #   control_type <- "checkboxGroupInput"
@@ -267,6 +318,11 @@ server <- function(input, output, session) {
     #   labelinput<-paste("Select the nodes having an effect on", focalnode)
     #   return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
     # })
+    tagList(
+      textInput(inputId = "nodes", label="Node names", value=paste(rvstructure$nodes, collapse=","))
+      )
+  })
+  output$modeldefinition2<-renderUI({ # warning this piece of code is duplicated (in observeEvent(eventExpr=input$nodes, )
     checkboxeseffectof <- lapply(rvstructure$nodes, function(i) {
       control_type <- "checkboxGroupInput"
       edges<-rvstructure$edges
@@ -278,12 +334,19 @@ server <- function(input, output, session) {
       labelinput<-paste("Select the nodes having an effect on", i)
       return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
     })
+    tagList(checkboxeseffectof)
+  })
+  
+  output$modeldefinition3<-renderUI({
     tagList(
-      textInput(inputId = "nodes", label="Node names", value=paste(rvstructure$nodes, collapse=",")),
-      tagList(checkboxeseffectof),
-      downloadButton(outputId="downloadtemplate", label="Download the excel template (not yet coded)")
+      plotOutput(outputId = "plotGraphsideMenu"),
+      downloadButton(outputId="downloadtemplate", label="Download the excel template"),
+      p("save the downloaded file and fill in the transisiotn probabilities in tab 'Transitions', then save the file and upload it with the buton at the top of box 'Define your own model' to load your own model")
     )
   })
+  
+  
+  
   
   ####   boxParameterisation  ####
   output$boxParameterisation<-renderUI({
@@ -317,10 +380,12 @@ server <- function(input, output, session) {
       
     })
     tagList(
-      fileInput("uploadexcel", "Upload the complete model definition file (not yet coded)"),
-      p("You can further finetune the parameters"),
-      tagList(controls_list)
-      #actionButton(inputId="updateTransitions", label="Update model (not yet coded)")
+      p("You can further finetune the parameters:"),
+      tagList(controls_list),
+      actionButton("updatetransitions", label="Update transitions (not coded yet)"),
+      downloadButton(outputId="finetunedfile", label="Download fine-tuned file")
+      #h2("Once you have completed the transitions, please upload the completed file with the upload button on top of the model definition box"),
+      
     )
   })
   
@@ -344,6 +409,84 @@ server <- function(input, output, session) {
     }
     return(perturbation)
   })#perturbationData() is a data.frame of the perturbations (one line per time-node, with columns when what value)
+  
+  #### upload excel file and replace model ####
+  observeEvent(
+    eventExpr=c(input$uploadexcel),
+    handlerExpr={
+      req(input$uploadexcel)
+      newvalues<-readexcel(input$uploadexcel$datapath)
+      rvstructure$nodes <<- newvalues$nodes #vector of node names
+      rvstructure$edges <<- newvalues$edges #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+      rvparam$transitions <<-newvalues$transitions #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+    },
+    ignoreInit =TRUE
+  )
+  
+  #### reset default values ####
+  observeEvent(
+    eventExpr=c(input$resetdefault),
+    handlerExpr={
+      rvstructure$nodes <<- DEFAULTVALUES$nodes #vector of node names
+      rvstructure$edges <<- DEFAULTVALUES$edges #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+      rvparam$transitions <<-DEFAULTVALUES$transitions #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+    },
+    ignoreInit =TRUE
+  )
+  
+  observeEvent(eventExpr=input$nodes,
+               handlerExpr={
+                 usernodes<-input$nodes
+                 usernodes<-gsub(pattern="; ", replacement=",", x=usernodes)
+                 if(!identical(unname(unlist(strsplit(usernodes, split=","))), unname(rvstructure$nodes))){
+                   output$modeldefinition2<<-renderUI({ # warning this piece of code is duplicated (in output$modeldefinition2<-renderUI({ )
+                     userstructure<-tempostructure()
+                     checkboxeseffectof <- lapply(userstructure$nodes, function(i) {
+                       control_type <- "checkboxGroupInput"
+                       edges<-userstructure$edges
+                       effectsof<-edges[edges$EffectOn==i, "EffectOf"] #effectsof is a vector of context nodes
+                       input_id <- paste("effectson", i, sep="_")
+                       #message(paste("creation", input_id))
+                       choices <- userstructure$nodes
+                       selected<-effectsof
+                       labelinput<-paste("Select the nodes having an effect on", i)
+                       return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
+                     })
+                     tagList(checkboxeseffectof)
+                   })
+                 }
+               },
+               ignoreInit = TRUE)
+  #### reactive to hold the temporary model structure
+  tempostructure<-reactive({
+    controls <- reactiveValuesToList(input)
+    controls[["nodes"]]<-gsub(pattern="; ", replacement=",", x=controls[["nodes"]])
+    nodes<-unlist(strsplit(controls[["nodes"]], split=","))
+    listedges<-controls[grepl(x=names(controls), pattern="effectson_", fixed=TRUE)]
+    edges<-data.frame()
+    if(length(listedges)>0) for(i in names(listedges)){
+      effects<-listedges[[i]]
+      if(length(effects)>0) {
+        toto<-data.frame(EffectOn=gsub(pattern="effectson_", replacement="", x=i), EffectOf=effects)
+        edges<-rbind(edges, toto)
+      }
+    } else edges<-data.frame(EffectOn=character(0),EffectOf=character(0) )
+    return(list(nodes=nodes, edges=edges))
+  })
+  
+  #### create and download template with the user model structure ####
+  
+  output$downloadtemplate <- downloadHandler(
+    filename = function() {
+      return("Template_modeldefinition.xlsx")
+    },
+    content = function(file) {
+      toto<-isolate(tempostructure())
+      listdf<-createtemplate(nodes=toto$nodes, 
+                             edges=toto$edges)
+      write.xlsx(listdf, file = file)
+    }
+  )
   
   
   
@@ -402,17 +545,27 @@ server <- function(input, output, session) {
                      perturbation=perturbation)
     plotmeans(allsims)
   })),
-  eventExpr={input$nbreps
-    input$timesteps
-    perturbationData()
-    input$updateTransitions
-    input$updateedges
-  },
-  ignoreNULL =FALSE
-  
+    eventExpr={input$nbreps
+      input$timesteps
+      perturbationData()
+      input$updateTransitions
+      input$updateedges
+    },
+    ignoreNULL =FALSE
   )
+  
+  #### small graph side menu in model definition box ####
+  output$plotGraphsideMenu<-renderPlot({
+    #### plot graph of relationships ####
+    if(TRUE) {
+      g <- graph_from_data_frame(tempostructure()$edges[,c("EffectOf", "EffectOn")], directed=TRUE)
+      plot(g, layout=layout.circle, main="Declared effects")
+    } else plot(0,0, xlab="just to test plots in the side menu", ylab="", xaxt="n", yaxt="n")
+  })
+  
+  
   #### graphs model analysis ####
-  output$plotGraph<-renderPlot({
+  output$plotGraphmainPanel<-renderPlot({
     #### plot graph of relationships ####
     if(TRUE) {
       g <- graph_from_data_frame(rvstructure$edges[,c("EffectOf", "EffectOn")], directed=TRUE)
@@ -429,11 +582,13 @@ server <- function(input, output, session) {
       allsims<-runexpe(initstate=initstate, 
                        transitions=rvparam$transitions, 
                        timesteps=input$timesteps, 
-                       nbreps=input$nbreps,
-                       perturbation=NULL)
+                       nbreps=input$nbreps)
       notrees<-initstate
       notrees["Trees"]<-0
-      allsims2<-runexpe(initstate=notrees, transitions=transitions, timesteps=52, nbreps=100#,
+      allsims2<-runexpe(initstate=notrees,
+                        transitions=rvparam$transitions,
+                        timesteps=52, 
+                        nbreps=100#,
                         #                  pesticides = c(N1=0.3),
                         #                  perturbation=data.frame(when=c(20, 35), what=c("N1", "N2"), value=c(1, 0))
       )
