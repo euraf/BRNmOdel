@@ -1,31 +1,16 @@
 library(shiny)
 library(igraph)
 library(lavaan)
-library(purrr)
 library(semPlot)
 #set.seed(1978)
 library(reactlog)
 
-# tell shiny to log all reactivity
-reactlog_enable()
+# tell shiny to log all reactivity for debugging
+#reactlog_enable()
 
 #### Global ####
 
 
-### access functions to circumvent the Error in [: Can't index reactivevalues with `[` error
-#' returns value at index
-#'
-#' @param rv reactiveValues()
-#' @param field character vector
-#'
-#' @return value at index
-access_rv = function(rv,field){
-  isolate(purrr::pluck(rv, !!!field))
-}
-
-set_rv = function(rv,field,value){
-  isolate(purrr::pluck(rv, !!!field) <- value )
-}
 
 
 #' Function to run 1 time step of probabilistic transitions
@@ -257,7 +242,7 @@ ui <- fluidPage(
           uiOutput(outputId="modeldefinition1"),
           uiOutput(outputId="modeldefinition2"),
           uiOutput(outputId="modeldefinition3"),
-          style = "danger"
+          style = "success"
         ),
         bsCollapsePanel(
           "Model parameterization",
@@ -479,15 +464,16 @@ server <- function(input, output, session) {
     edges<-data.frame()
     #print(names(isolate(reactiveValuesToList(input))))
     for(i in rvuserstructure$nodes){
-      print(i)
-      effects<-access_rv(input, paste("effectson", i, sep="_"))
-      print(effects)
+      #print(i)
+      #effects<-access_rv(input, paste("effectson", i, sep="_"))
+      effects<-input[[paste("effectson", i, sep="_")]]
+      #print(effects)
       if(!is.null(effects)>0) {
         toto<-data.frame(EffectOn=i, EffectOf=effects)
         edges<-rbind(edges, toto)
       }
     }
-    print(edges)
+    #print(edges)
     if(ncol(edges)>0) rvuserstructure$edges<-edges
     #print(effects)
     # controls <- reactiveValuesToList(input)
@@ -590,20 +576,21 @@ server <- function(input, output, session) {
   # icicic I don't understand why this does not update when rvuserstructure$nodes is changed !
   output$plotGraphsideMenu<-renderPlot({
     #### plot graph of relationships ####
-    #rvuserstructure$nodes #just to update when nodes are modified
-    #data<-rvuserstructure$edges
+    rvuserstructure$nodes #just to update when nodes are modified
+    data<-rvuserstructure$edges
     #does not work let's do it directly from input
-    for(i in rvuserstructure$nodes){
-      print(i)
-      effects<-access_rv(input, paste("effectson", i, sep="_"))
-      print(effects)
-      if(!is.null(effects)>0) {
-        toto<-data.frame(EffectOn=i, EffectOf=effects)
-        edges<-rbind(edges, toto)
-      }
-    }
-    print(edges)
-    data<-edges
+    # for(i in rvuserstructure$nodes){
+    #   print(i)
+    #   #effects<-access_rv(input, paste("effectson", i, sep="_"))
+    #   effects<-input[[paste("effectson", i, sep="_")]]
+    #   print(effects)
+    #   if(!is.null(effects)>0) {
+    #     toto<-data.frame(EffectOn=i, EffectOf=effects)
+    #     edges<-rbind(edges, toto)
+    #   }
+    # }
+    # print(edges)
+    # data<-edges
     g <- graph_from_data_frame(data[,c("EffectOf", "EffectOn")], directed=TRUE)
     plot(g, layout=layout.circle, main="Declared effects")
   })
