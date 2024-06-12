@@ -1,16 +1,31 @@
 library(shiny)
 library(igraph)
 library(lavaan)
-
+library(purrr)
 library(semPlot)
 #set.seed(1978)
+library(reactlog)
 
-#warning: there is a mistake in the code making it difficult to maintain: 
-#edges is sometimes a named list (on element per node) of character vectors of causal node names (the names of the list are in the form paste("effectson", i, sep="_") with i the focal node name) this comes from the checkboxgroupinput
-# and sometimes a data.frame with 2 columns EffectOn and EffectOf
-#to do: call it listedges when it is a list
+# tell shiny to log all reactivity
+reactlog_enable()
 
 #### Global ####
+
+
+### access functions to circumvent the Error in [: Can't index reactivevalues with `[` error
+#' returns value at index
+#'
+#' @param rv reactiveValues()
+#' @param field character vector
+#'
+#' @return value at index
+access_rv = function(rv,field){
+  isolate(purrr::pluck(rv, !!!field))
+}
+
+set_rv = function(rv,field,value){
+  isolate(purrr::pluck(rv, !!!field) <- value )
+}
 
 
 #' Function to run 1 time step of probabilistic transitions
@@ -276,7 +291,12 @@ server <- function(input, output, session) {
   rvstructure <- reactiveValues(nodes=DEFAULTVALUES$nodes, #vector of node names
                                 edges=DEFAULTVALUES$edges) #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
   rvparam<-reactiveValues(transitions=DEFAULTVALUES$transitions) #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+  rvuserstructure<-reactiveValues(nodes=DEFAULTVALUES$nodes, #vector of node names
+                                  edges=DEFAULTVALUES$edges) #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+  rvuserparam<-reactiveValues(transitions=DEFAULTVALUES$transitions) #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
   # to do: currently, interacting with any control causes the model to re-run, which is annoying because it's time consuming. immediate effect should happen only in the "model settings box. actions on the model definition and parameterization boxes should do nothing until the "update model" buttons are clicked.
+  # to try to solve this, separate rvstructure and rvparam from the structure and params comming from the "define your own model box"
+  #actually the problem comes from the fact tha we use reactiveValuesToList, which returns all inputs even those we do not want. solution not yet implemented : consstruct first the name of widget we need, and extract them with acces_rv() function 
   
   #### dynamic UI ####
   ####   boxinitialisation ####
@@ -317,18 +337,18 @@ server <- function(input, output, session) {
     #   return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
     # })
     tagList(
-      textInput(inputId = "nodes", label="Node names", value=paste(rvstructure$nodes, collapse=",")),
-      actionButton(inputId="buttonvalidatenodes", label="Validate nodes")
+      textInput(inputId = "nodes", label="Node names", value=paste(rvuserstructure$nodes, collapse=",")),
+      actionButton(inputId="buttonvalidatenodes", label="Validate nodes") #because it takes time to type, so it's better to indicate when it is finished
     )
   })
   output$modeldefinition2<-renderUI({ # warning this piece of code is duplicated (in observeEvent(eventExpr=input$nodes, )
-    checkboxeseffectof <- lapply(rvstructure$nodes, function(i) {
+    checkboxeseffectof <- lapply(rvuserstructure$nodes, function(i) {
       control_type <- "checkboxGroupInput"
-      edges<-rvstructure$edges
+      edges<-rvuserstructure$edges
       effectsof<-edges[edges$EffectOn==i, "EffectOf"] #effectsof is a vector of context nodes
       input_id <- paste("effectson", i, sep="_")
       #message(paste("creation", input_id))
-      choices <- rvstructure$nodes
+      choices <- setdiff(rvuserstructure$nodes, i)
       selected<-effectsof
       labelinput<-paste("Select the nodes having an effect on", i)
       return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
@@ -349,7 +369,7 @@ server <- function(input, output, session) {
   
   ####   boxParameterisation  ####
   output$boxParameterisation<-renderUI({
-    controls_list <- lapply(rvparam$transitions, function(i) {
+    controls_list <- lapply(rvuserparam$transitions, function(i) {
       focalnode<-names(dimnames(i))[2]
       effectsof<-names(dimnames(i))[1]
       if(effectsof!=""){
@@ -415,9 +435,12 @@ server <- function(input, output, session) {
     handlerExpr={
       req(input$uploadexcel)
       newvalues<-readexcel(input$uploadexcel$datapath)
-      rvstructure$nodes <<- newvalues$nodes #vector of node names
-      rvstructure$edges <<- newvalues$edges #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
-      rvparam$transitions <<-newvalues$transitions #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+      rvstructure$nodes <- newvalues$nodes #vector of node names
+      rvstructure$edges <- newvalues$edges #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+      rvparam$transitions <-newvalues$transitions #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+      rvuserstructure$nodes <- newvalues$nodes #vector of node names
+      rvuserstructure$edges <- newvalues$edges #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+      rvuserparam$transitions <-newvalues$transitions #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
     },
     ignoreInit =TRUE
   )
@@ -426,54 +449,60 @@ server <- function(input, output, session) {
   observeEvent(
     eventExpr=c(input$resetdefault),
     handlerExpr={
-      rvstructure$nodes <<- DEFAULTVALUES$nodes #vector of node names
-      rvstructure$edges <<- DEFAULTVALUES$edges #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
-      rvparam$transitions <<-DEFAULTVALUES$transitions #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+      rvstructure$nodes <- DEFAULTVALUES$nodes #vector of node names
+      rvstructure$edges <- DEFAULTVALUES$edges #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+      rvparam$transitions <-DEFAULTVALUES$transitions #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+      rvuserstructure$nodes <- DEFAULTVALUES$nodes #vector of node names
+      rvuserstructure$edges <- DEFAULTVALUES$edges #data.frame with 2 columns: EffectOn	EffectOf (EffectOn is the name of thefocal node and EffectOf is the concatenation (name1_name2_name3 of the nodes causing the contexte of the focal node)
+      rvuserparam$transitions <-DEFAULTVALUES$transitions #list (one element per node that can change, size p, named according to node name) of arrays of dimension (F1_F2_F3...=2^d,NX=2) where the dimension name F1_F2_F3... indicates the influencing factors, NX is the name of the node being modified d is the number of influencing factors on the given node, the rows are named by the influencing factors' state and the columns are named 0 (transition from 0 to 1) and 1 (transition from 1 to 0)
+      
     },
     ignoreInit =TRUE
   )
   
-  # #icicicicic bug: this creates an infinite loop
-  # observeEvent(eventExpr=input$buttonvalidatenodes,
-  #              handlerExpr={
-  #                usernodes<-input$nodes
-  #                usernodes<-gsub(pattern="; ", replacement=",", x=usernodes)
-  #                if(!identical(unname(unlist(strsplit(usernodes, split=","))), unname(rvstructure$nodes))){
-  #                  output$modeldefinition2<<-renderUI({ # warning this piece of code is duplicated (in output$modeldefinition2<-renderUI({ )
-  #                    userstructure<-tempostructure()
-  #                    checkboxeseffectof <- lapply(userstructure$nodes, function(i) {
-  #                      control_type <- "checkboxGroupInput"
-  #                      edges<-userstructure$edges
-  #                      effectsof<-edges[edges$EffectOn==i, "EffectOf"] #effectsof is a vector of context nodes
-  #                      input_id <- paste("effectson", i, sep="_")
-  #                      #message(paste("creation", input_id))
-  #                      choices <- userstructure$nodes
-  #                      selected<-effectsof
-  #                      labelinput<-paste("Select the nodes having an effect on", i)
-  #                      return(checkboxGroupInput(input_id, label = labelinput, choices = choices, selected=selected))
-  #                    })
-  #                    tagList(checkboxeseffectof)
-  #                  })
-  #                }
-  #              },
-  #              ignoreInit = TRUE
-  # )
+  #### update the user-defined nodes ####
+  observeEvent(eventExpr=input$buttonvalidatenodes,
+               handlerExpr={
+                 usernodes<-input$nodes
+                 usernodes<-gsub(pattern=";", replacement=",", x=usernodes)
+                 usernodes<-unname(unlist(strsplit(usernodes, split=",")))
+                 if(!identical(usernodes,rvuserstructure$nodes)){
+                   rvuserstructure$nodes<-usernodes #this will cause modeldefinition2 UI to update #was <<-
+                 }
+               },
+               ignoreInit = TRUE
+  )
   
-  #### reactive to hold the temporary model structure
-  tempostructure<-reactive({
-    controls <- reactiveValuesToList(input)
-    controls[["nodes"]]<-gsub(pattern="; ", replacement=",", x=controls[["nodes"]])
-    nodes<-unlist(strsplit(controls[["nodes"]], split=","))
-    listedges<-controls[grepl(x=names(controls), pattern="effectson_", fixed=TRUE)]
+  #### update the user-defined relationships structure ####
+  # icicicic i'm trying to create an observer that reacts to the change of the input$effectson_ checkboxes and only those
+  observe({
     edges<-data.frame()
-    if(length(listedges)>0) for(i in names(listedges)){
-      effects<-listedges[[i]]
-      if(length(effects)>0) {
-        toto<-data.frame(EffectOn=gsub(pattern="effectson_", replacement="", x=i), EffectOf=effects)
+    #print(names(isolate(reactiveValuesToList(input))))
+    for(i in rvuserstructure$nodes){
+      print(i)
+      effects<-access_rv(input, paste("effectson", i, sep="_"))
+      print(effects)
+      if(!is.null(effects)>0) {
+        toto<-data.frame(EffectOn=i, EffectOf=effects)
         edges<-rbind(edges, toto)
       }
-    } else edges<-data.frame(EffectOn=character(0),EffectOf=character(0) )
-    return(list(nodes=nodes, edges=edges))
+    }
+    print(edges)
+    if(ncol(edges)>0) rvuserstructure$edges<-edges
+    #print(effects)
+    # controls <- reactiveValuesToList(input)
+    # nodes<-gsub(pattern="; ", replacement=",", x=controls[["nodes"]])
+    # nodes<-unname(unlist(strsplit(nodes, split=",")))
+    # listedges<-controls[grepl(x=names(controls), pattern="effectson_", fixed=TRUE)]
+    # edges<-data.frame()
+    # if(length(listedges)>0) for(i in names(listedges)){
+    #   effects<-listedges[[i]]
+    #   if(length(effects)>0) {
+    #     toto<-data.frame(EffectOn=gsub(pattern="effectson_", replacement="", x=i), EffectOf=effects)
+    #     edges<-rbind(edges, toto)
+    #   }
+    # } else edges<-data.frame(EffectOn=character(0),EffectOf=character(0) )
+    # rvuserstructure$edges<-edges #was <<-
   })
   
   #### create and download template with the user model structure ####
@@ -483,9 +512,10 @@ server <- function(input, output, session) {
       return("Template_modeldefinition.xlsx")
     },
     content = function(file) {
-      toto<-isolate(tempostructure())
-      listdf<-createtemplate(nodes=toto$nodes, 
-                             edges=toto$edges)
+      nodes<-isolate(rvuserstructure$nodes)
+      edges<-isolate(rvuserstructure$edges)
+      listdf<-createtemplate(nodes=nodes, 
+                             edges=edges)
       write.xlsx(listdf, file = file)
     }
   )
@@ -507,10 +537,10 @@ server <- function(input, output, session) {
                    subcontext<-context[focalnodes==n]
                    subprobatypes<-context[focalnodes==n]
                    newvalues<-controls[focalnodes==n]
-                   rvparam$Transitions[[n]][subcontext, as.character(subprobatypes=="probah2l")]<<-newvalues
+                   rvparam$Transitions[[n]][subcontext, as.character(subprobatypes=="probah2l")]<-newvalues #was <<-
                  }
                  #NB once transitions have been changed to 3dimensionnal arrays, something like this will be easier
-                 #rv$Transitions[focalnodes, context, as.character(probatypes=="probah2l")]<<-controls
+                 #rv$Transitions[focalnodes, context, as.character(probatypes=="probah2l")]<-controls #was <<-
                },
                ignoreInit = TRUE
   )
@@ -557,12 +587,25 @@ server <- function(input, output, session) {
   )
   
   #### small graph side menu in model definition box ####
+  # icicic I don't understand why this does not update when rvuserstructure$nodes is changed !
   output$plotGraphsideMenu<-renderPlot({
     #### plot graph of relationships ####
-    if(TRUE) {
-      g <- graph_from_data_frame(tempostructure()$edges[,c("EffectOf", "EffectOn")], directed=TRUE)
-      plot(g, layout=layout.circle, main="Declared effects")
-    } else plot(0,0, xlab="just to test plots in the side menu", ylab="", xaxt="n", yaxt="n")
+    #rvuserstructure$nodes #just to update when nodes are modified
+    #data<-rvuserstructure$edges
+    #does not work let's do it directly from input
+    for(i in rvuserstructure$nodes){
+      print(i)
+      effects<-access_rv(input, paste("effectson", i, sep="_"))
+      print(effects)
+      if(!is.null(effects)>0) {
+        toto<-data.frame(EffectOn=i, EffectOf=effects)
+        edges<-rbind(edges, toto)
+      }
+    }
+    print(edges)
+    data<-edges
+    g <- graph_from_data_frame(data[,c("EffectOf", "EffectOn")], directed=TRUE)
+    plot(g, layout=layout.circle, main="Declared effects")
   })
   
   
@@ -615,8 +658,12 @@ server <- function(input, output, session) {
       #install.packages("semPlot", dependencies=T)
       
       
-      
-      model<-paste(sapply(unique(rvstructure$edges$EffectOn), function(x) {paste(x, paste(c(paste(x, "previous", sep="_"), paste(edges[edges$EffectOn==x, "EffectOf"], "previous", sep="_")),collapse="+"),sep="~")}), collapse ="\n")
+      edges<-rvstructure$edges
+      model<-paste(sapply(unique(edges$EffectOn), function(x) {
+        paste(x, paste(c(paste(x, "previous", sep="_"), 
+                         paste(edges[edges$EffectOn==x, "EffectOf"], "previous", sep="_")),
+                       collapse="+"), sep="~")
+      }), collapse ="\n")
       # model<- '
       # NaturalEnemies~NaturalEnemies_previous+Trees_previous+Weeds_previous+Diseases_previous+Pests_previous
       # Pests~Pests_previous+Trees_previous+NaturalEnemies_previous+Weeds_previous+Diseases_previous
