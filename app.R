@@ -399,7 +399,7 @@ server <- function(input, output, session) {
   #### Perturbations ####
   perturbationData<-reactive({
     perturbation<-data.frame()
-    controls <- reactiveValuesToList(input)
+    controls <- reactiveValuesToList(input) #here we keep it, because the model will have to rerun obviously, only downside: when submenus are expanded and their controls are created, it redraws the graph
     controls<-controls[grepl(x=names(controls), pattern="outbreakrange_", fixed=TRUE)]
     if(length(controls)>0){
       hasbeenset<-sapply(controls, function (x) return(!identical(as.numeric(x), c(-1,-1))))
@@ -462,33 +462,14 @@ server <- function(input, output, session) {
   # icicicic i'm trying to create an observer that reacts to the change of the input$effectson_ checkboxes and only those
   observe({
     edges<-data.frame()
-    #print(names(isolate(reactiveValuesToList(input))))
     for(i in rvuserstructure$nodes){
-      #print(i)
-      #effects<-access_rv(input, paste("effectson", i, sep="_"))
       effects<-input[[paste("effectson", i, sep="_")]]
-      #print(effects)
       if(!is.null(effects)>0) {
         toto<-data.frame(EffectOn=i, EffectOf=effects)
         edges<-rbind(edges, toto)
       }
     }
-    #print(edges)
     if(ncol(edges)>0) rvuserstructure$edges<-edges
-    #print(effects)
-    # controls <- reactiveValuesToList(input)
-    # nodes<-gsub(pattern="; ", replacement=",", x=controls[["nodes"]])
-    # nodes<-unname(unlist(strsplit(nodes, split=",")))
-    # listedges<-controls[grepl(x=names(controls), pattern="effectson_", fixed=TRUE)]
-    # edges<-data.frame()
-    # if(length(listedges)>0) for(i in names(listedges)){
-    #   effects<-listedges[[i]]
-    #   if(length(effects)>0) {
-    #     toto<-data.frame(EffectOn=gsub(pattern="effectson_", replacement="", x=i), EffectOf=effects)
-    #     edges<-rbind(edges, toto)
-    #   }
-    # } else edges<-data.frame(EffectOn=character(0),EffectOf=character(0) )
-    # rvuserstructure$edges<-edges #was <<-
   })
   
   #### create and download template with the user model structure ####
@@ -511,7 +492,7 @@ server <- function(input, output, session) {
   #### modification of transitions ####
   observeEvent(eventExpr=input$updateTransitions,
                handlerExpr={
-                 controls <- reactiveValuesToList(input)
+                 controls <- reactiveValuesToList(input) #to do: decide whether the transitions modifications should impact rvparam or rvuserparam! then remove the reactiveValuesToList and change it to constructing the control names and accessing input[[name]] with a for loop
                  controls<-c(controls[grepl(x=names(controls), pattern="^probal2h")],
                              controls[grepl(x=names(controls), pattern="^probah2l")])
                  toto<-strsplit(names(controls), split="_")

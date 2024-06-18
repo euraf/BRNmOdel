@@ -15,4 +15,4 @@ Author of code: Marie Gosme
 
 It can be tested here: https://gosme.shinyapps.io/BooleanPestModel/
 
-Note: why is it called BRNmOdel? Answer: it is called BRNmOdel because it is a Boolean Regulatory Network model, and the idea for this interface came during a discussion between Marie and Colin durng the EURAF meeting in Brno (thank you Joao for the name!)
+Note: why is it called BRNmOdel? Answer: it is called BRNmOdel because it is a Boolean Regulatory Network model, and the idea for this interface came during a discussion between Marie and Colin during the EURAF meeting in Brno (thank you Joao for the name!)
